@@ -15,6 +15,10 @@ import {
   Loader2,
   Eye,
   RefreshCw,
+  Download,
+  StickyNote,
+  User,
+  ListChecks,
 } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/common/Button';
@@ -31,6 +35,7 @@ import { v4 as uuidv4 } from 'uuid';
 export function ChatView() {
   const {
     currentNovelId,
+    currentSceneId,
     chatConversations,
     chatPersonas,
     prompts,
@@ -47,6 +52,9 @@ export function ChatView() {
     codexEntries,
     snippets,
     novels,
+    createSnippet,
+    createCodexEntry,
+    updateScene,
   } = useStore();
 
   const [input, setInput] = useState('');
@@ -54,6 +62,65 @@ export function ChatView() {
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [extractedId, setExtractedId] = useState<string | null>(null);
+
+  // Extract handlers
+  const handleExtractToSnippet = async (content: string) => {
+    if (!currentNovelId) return;
+    await createSnippet(currentNovelId, {
+      title: 'Extracted from Chat',
+      content,
+      type: 'note',
+      tags: ['ai-generated'],
+      isPinned: false,
+    });
+    setExtractedId('snippet');
+    setTimeout(() => setExtractedId(null), 2000);
+  };
+
+  const handleExtractToCodex = async (content: string, type: 'character' | 'location' | 'object' | 'lore') => {
+    if (!currentNovelId) return;
+    // Try to extract a name from the first line
+    const lines = content.split('\n');
+    const name = lines[0].replace(/^[#\-\*\s]+/, '').slice(0, 50) || 'New Entry';
+    const description = lines.slice(1).join('\n').trim();
+
+    await createCodexEntry(currentNovelId, {
+      type,
+      name,
+      description,
+      aliases: [],
+      tags: ['ai-generated'],
+      customDetails: [],
+      progressions: [],
+      relations: [],
+      mentions: [],
+      trackingSettings: { includeInAI: true, trackAppearances: true, autoDetect: false },
+      isGlobal: false,
+    });
+    setExtractedId('codex');
+    setTimeout(() => setExtractedId(null), 2000);
+  };
+
+  const handleExtractToBeats = async (content: string) => {
+    const currentScene = scenes.find(s => s.id === currentSceneId);
+    if (!currentScene) return;
+
+    // Parse beats from content (each line is a beat)
+    const beatLines = content.split('\n').filter(line => line.trim());
+    const newBeats = beatLines.slice(0, 10).map((line, index) => ({
+      id: uuidv4(),
+      content: line.replace(/^[\d\.\-\*]+\s*/, '').trim(),
+      order: (currentScene.beats?.length || 0) + index,
+      isCompleted: false,
+    }));
+
+    await updateScene(currentScene.id, {
+      beats: [...(currentScene.beats || []), ...newBeats],
+    });
+    setExtractedId('beats');
+    setTimeout(() => setExtractedId(null), 2000);
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -287,6 +354,11 @@ export function ChatView() {
                     message={message}
                     onCopy={() => handleCopy(message.id, message.content)}
                     isCopied={copiedId === message.id}
+                    onExtractToSnippet={() => handleExtractToSnippet(message.content)}
+                    onExtractToCodex={(type) => handleExtractToCodex(message.content, type)}
+                    onExtractToBeats={() => handleExtractToBeats(message.content)}
+                    extractedId={extractedId}
+                    hasCurrentScene={!!currentSceneId}
                   />
                 ))
               )}
@@ -367,9 +439,23 @@ interface MessageBubbleProps {
   message: ChatMessage;
   onCopy: () => void;
   isCopied: boolean;
+  onExtractToSnippet: () => void;
+  onExtractToCodex: (type: 'character' | 'location' | 'object' | 'lore') => void;
+  onExtractToBeats: () => void;
+  extractedId: string | null;
+  hasCurrentScene: boolean;
 }
 
-function MessageBubble({ message, onCopy, isCopied }: MessageBubbleProps) {
+function MessageBubble({
+  message,
+  onCopy,
+  isCopied,
+  onExtractToSnippet,
+  onExtractToCodex,
+  onExtractToBeats,
+  extractedId,
+  hasCurrentScene,
+}: MessageBubbleProps) {
   const isUser = message.role === 'user';
 
   return (
@@ -386,12 +472,62 @@ function MessageBubble({ message, onCopy, isCopied }: MessageBubbleProps) {
           <span className="text-xs">
             {format(new Date(message.timestamp), 'h:mm a')}
           </span>
-          <button
-            onClick={onCopy}
-            className="p-1 rounded hover:bg-black/10"
-          >
-            {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Extract dropdown - only for assistant messages */}
+            {!isUser && (
+              <Dropdown
+                trigger={
+                  <button className="p-1 rounded hover:bg-black/10">
+                    {extractedId ? <Check className="w-3 h-3 text-green-500" /> : <Download className="w-3 h-3" />}
+                  </button>
+                }
+                align="right"
+              >
+                <DropdownItem
+                  icon={<StickyNote className="w-4 h-4" />}
+                  onClick={onExtractToSnippet}
+                >
+                  Save as Snippet
+                </DropdownItem>
+                <DropdownDivider />
+                <DropdownItem
+                  icon={<User className="w-4 h-4" />}
+                  onClick={() => onExtractToCodex('character')}
+                >
+                  Save as Character
+                </DropdownItem>
+                <DropdownItem
+                  icon={<FileText className="w-4 h-4" />}
+                  onClick={() => onExtractToCodex('location')}
+                >
+                  Save as Location
+                </DropdownItem>
+                <DropdownItem
+                  icon={<BookOpen className="w-4 h-4" />}
+                  onClick={() => onExtractToCodex('lore')}
+                >
+                  Save as Lore
+                </DropdownItem>
+                {hasCurrentScene && (
+                  <>
+                    <DropdownDivider />
+                    <DropdownItem
+                      icon={<ListChecks className="w-4 h-4" />}
+                      onClick={onExtractToBeats}
+                    >
+                      Add as Scene Beats
+                    </DropdownItem>
+                  </>
+                )}
+              </Dropdown>
+            )}
+            <button
+              onClick={onCopy}
+              className="p-1 rounded hover:bg-black/10"
+            >
+              {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            </button>
+          </div>
         </div>
       </div>
     </div>
