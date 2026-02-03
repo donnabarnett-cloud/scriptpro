@@ -7,6 +7,7 @@ import {
   MessageSquare,
   BarChart3,
   Settings,
+  Settings2,
   Plus,
   ChevronDown,
   ChevronRight,
@@ -21,6 +22,7 @@ import {
 import { useStore } from '@/store';
 import { Button } from '@/components/common/Button';
 import { Dropdown, DropdownItem, DropdownDivider } from '@/components/common/Dropdown';
+import { NovelSettingsModal } from '@/components/modals/NovelSettingsModal';
 import type { Act, Chapter, Scene } from '@/types';
 
 export function Sidebar() {
@@ -45,6 +47,7 @@ export function Sidebar() {
   } = useStore();
 
   const currentNovel = novels.find((n) => n.id === currentNovelId);
+  const [showNovelSettings, setShowNovelSettings] = useState(false);
 
   const navItems = [
     { id: 'write', label: 'Write', icon: PenTool },
@@ -96,11 +99,31 @@ export function Sidebar() {
       {/* Novel Info */}
       {currentNovel && (
         <div className="px-4 py-3 border-b border-[var(--border-color)]">
-          <h3 className="font-medium text-[var(--text-primary)] truncate">{currentNovel.title}</h3>
-          <p className="text-xs text-[var(--text-muted)]">
-            {currentNovel.wordCount.toLocaleString()} words
-          </p>
+          <div className="flex items-center justify-between">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium text-[var(--text-primary)] truncate">{currentNovel.title}</h3>
+              <p className="text-xs text-[var(--text-muted)]">
+                {currentNovel.wordCount.toLocaleString()} words
+              </p>
+            </div>
+            <button
+              onClick={() => setShowNovelSettings(true)}
+              className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              title="Novel Settings"
+            >
+              <Settings2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Novel Settings Modal */}
+      {currentNovel && (
+        <NovelSettingsModal
+          isOpen={showNovelSettings}
+          onClose={() => setShowNovelSettings(false)}
+          novelId={currentNovel.id}
+        />
       )}
 
       {/* Navigation */}
