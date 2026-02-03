@@ -13,6 +13,12 @@ import {
   Eye,
   EyeOff,
   Maximize2,
+  Loader2,
+  Wand2,
+  FileEdit,
+  Users,
+  ListChecks,
+  AlertCircle,
 } from 'lucide-react';
 import { useStore } from '@/store';
 import { Editor } from './Editor';
@@ -22,10 +28,11 @@ import { Modal } from '@/components/common/Modal';
 import { Badge, StatusBadge } from '@/components/common/Badge';
 import { Dropdown, DropdownItem, DropdownDivider } from '@/components/common/Dropdown';
 import { EmptyState } from '@/components/common/EmptyState';
-import type { Scene, SceneBeat } from '@/types';
+import type { Scene, SceneBeat, CodexEntry } from '@/types';
 import { format } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import debounce from '@/utils/debounce';
+import { AIService } from '@/services/ai';
 
 export function WriteView() {
   const {
@@ -33,20 +40,31 @@ export function WriteView() {
     currentSceneId,
     scenes,
     chapters,
+    acts,
     sceneLabels,
     codexEntries,
+    settings,
     updateScene,
     selectScene,
     getRevisions,
     restoreRevision,
     toggleFocusMode,
     focusMode,
+    createCodexEntry,
   } = useStore();
 
   const [showSceneSettings, setShowSceneSettings] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showBeatsPanel, setShowBeatsPanel] = useState(false);
   const [sidePanel, setSidePanel] = useState<'none' | 'notes' | 'beats' | 'context'>('none');
+
+  // AI State
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiAction, setAIAction] = useState<'summarize' | 'continue' | 'rewrite' | 'beats' | 'characters' | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<string | null>(null);
+  const [selectedText, setSelectedText] = useState<string>('');
 
   const currentScene = scenes.find((s) => s.id === currentSceneId);
   const currentChapter = chapters.find((c) => c.id === currentScene?.chapterId);
@@ -70,6 +88,129 @@ export function WriteView() {
 
   const handleContentChange = (content: string) => {
     debouncedUpdate(content);
+  };
+
+  // AI Handler Functions
+  const hasApiKey = Boolean(settings?.aiSettings?.apiKey);
+
+  const openAIAction = (action: typeof aiAction) => {
+    if (!hasApiKey) {
+      setAiError('Please configure your OpenRouter API key in Settings first.');
+      setShowAIModal(true);
+      return;
+    }
+    setAIAction(action);
+    setAiError(null);
+    setAiResult(null);
+    setShowAIModal(true);
+  };
+
+  const runAIAction = async () => {
+    if (!currentScene || !settings?.aiSettings?.apiKey) return;
+
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const aiService = new AIService(settings.aiSettings.apiKey, settings.aiSettings);
+
+      // Build simple context
+      const novelScenes = scenes.filter(s => s.novelId === currentNovelId && !s.isArchived);
+      const sceneIndex = novelScenes.findIndex(s => s.id === currentScene.id);
+      const previousScenes = novelScenes.slice(Math.max(0, sceneIndex - 2), sceneIndex);
+      const relevantCodex = codexEntries.filter(e => e.novelId === currentNovelId).slice(0, 10);
+
+      let context = '';
+      if (previousScenes.length > 0) {
+        context += '## Previous Scenes:\n';
+        previousScenes.forEach(s => {
+          context += `### ${s.title}\n${s.content.replace(/<[^>]*>/g, '').slice(0, 500)}...\n\n`;
+        });
+      }
+      if (relevantCodex.length > 0) {
+        context += '## Key Characters/Locations:\n';
+        relevantCodex.forEach(e => {
+          context += `- ${e.name} (${e.type}): ${e.description?.slice(0, 100) || 'No description'}\n`;
+        });
+        context += '\n';
+      }
+      context += `## Current Scene: ${currentScene.title}\n`;
+      context += currentScene.content.replace(/<[^>]*>/g, '');
+
+      let prompt = '';
+      let systemPrompt = 'You are a helpful writing assistant for novelists.';
+
+      switch (aiAction) {
+        case 'summarize':
+          systemPrompt = 'You are a concise summarizer for novel scenes. Create brief, useful summaries.';
+          prompt = `Summarize this scene in 2-3 sentences:\n\n${currentScene.content.replace(/<[^>]*>/g, '')}`;
+          break;
+        case 'continue':
+          systemPrompt = 'You are a creative writing assistant. Continue the story naturally, matching the existing tone and style.';
+          prompt = `Context:\n${context}\n\nContinue writing the scene from where it left off. Write 2-3 paragraphs.`;
+          break;
+        case 'rewrite':
+          if (!selectedText) {
+            setAiError('Please select some text in the editor first.');
+            setAiLoading(false);
+            return;
+          }
+          systemPrompt = 'You are a skilled editor. Rewrite the given text to improve clarity, flow, and engagement while maintaining the original meaning.';
+          prompt = `Context:\n${context}\n\nRewrite this text to improve it:\n\n"${selectedText}"`;
+          break;
+        case 'beats':
+          systemPrompt = 'You are a story structure expert. Generate concise scene beats (story points) that would make this scene compelling.';
+          prompt = `Based on this scene, suggest 5-7 key beats (story points/events) that should happen:\n\n${currentScene.content.replace(/<[^>]*>/g, '').slice(0, 2000)}`;
+          break;
+        case 'characters':
+          systemPrompt = 'You are a character analyst. Identify all characters mentioned in the text.';
+          prompt = `List all character names mentioned in this scene. For each character, provide:\n- Name\n- Brief description (if inferable)\n\nScene:\n${currentScene.content.replace(/<[^>]*>/g, '')}`;
+          break;
+      }
+
+      const response = await aiService.chat([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt },
+      ]);
+
+      setAiResult(response.content);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI request failed');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const applyAIResult = () => {
+    if (!aiResult || !currentScene) return;
+
+    switch (aiAction) {
+      case 'summarize':
+        updateScene(currentScene.id, { summary: aiResult });
+        break;
+      case 'continue':
+        // Append to content
+        const newContent = currentScene.content + `<p>${aiResult.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`;
+        updateScene(currentScene.id, { content: newContent });
+        break;
+      case 'rewrite':
+        // User needs to manually copy/paste the rewritten text
+        navigator.clipboard.writeText(aiResult);
+        break;
+      case 'beats':
+        // Parse beats and add to scene
+        const beatLines = aiResult.split('\n').filter(line => line.trim());
+        const newBeats: SceneBeat[] = beatLines.slice(0, 10).map((line, index) => ({
+          id: uuidv4(),
+          content: line.replace(/^[\d\.\-\*]+\s*/, '').trim(),
+          order: (currentScene.beats?.length || 0) + index,
+          isCompleted: false,
+        }));
+        updateScene(currentScene.id, { beats: [...(currentScene.beats || []), ...newBeats] });
+        break;
+    }
+
+    setShowAIModal(false);
   };
 
   if (!currentNovelId) {
@@ -152,14 +293,54 @@ export function WriteView() {
                 Notes
               </Button>
 
-              {/* AI Button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                leftIcon={<Sparkles className="w-4 h-4" />}
+              {/* AI Dropdown */}
+              <Dropdown
+                trigger={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<Sparkles className="w-4 h-4" />}
+                  >
+                    AI
+                  </Button>
+                }
               >
-                AI
-              </Button>
+                <DropdownItem
+                  icon={<FileEdit className="w-4 h-4" />}
+                  onClick={() => openAIAction('summarize')}
+                >
+                  Summarize Scene
+                </DropdownItem>
+                <DropdownItem
+                  icon={<Wand2 className="w-4 h-4" />}
+                  onClick={() => openAIAction('continue')}
+                >
+                  Continue Writing
+                </DropdownItem>
+                <DropdownItem
+                  icon={<FileEdit className="w-4 h-4" />}
+                  onClick={() => {
+                    const selection = window.getSelection()?.toString() || '';
+                    setSelectedText(selection);
+                    openAIAction('rewrite');
+                  }}
+                >
+                  Rewrite Selection
+                </DropdownItem>
+                <DropdownDivider />
+                <DropdownItem
+                  icon={<ListChecks className="w-4 h-4" />}
+                  onClick={() => openAIAction('beats')}
+                >
+                  Generate Beats
+                </DropdownItem>
+                <DropdownItem
+                  icon={<Users className="w-4 h-4" />}
+                  onClick={() => openAIAction('characters')}
+                >
+                  Detect Characters
+                </DropdownItem>
+              </Dropdown>
 
               {/* History */}
               <Button
@@ -235,6 +416,131 @@ export function WriteView() {
         revisions={revisions}
         onRestore={restoreRevision}
       />
+
+      {/* AI Actions Modal */}
+      <Modal
+        isOpen={showAIModal}
+        onClose={() => {
+          setShowAIModal(false);
+          setAIAction(null);
+          setAiResult(null);
+          setAiError(null);
+        }}
+        title={
+          aiAction === 'summarize' ? 'Summarize Scene' :
+          aiAction === 'continue' ? 'Continue Writing' :
+          aiAction === 'rewrite' ? 'Rewrite Selection' :
+          aiAction === 'beats' ? 'Generate Scene Beats' :
+          aiAction === 'characters' ? 'Detect Characters' :
+          'AI Assistant'
+        }
+        size="lg"
+        footer={
+          aiResult ? (
+            <>
+              <Button variant="ghost" onClick={() => {
+                setShowAIModal(false);
+                setAIAction(null);
+                setAiResult(null);
+              }}>
+                Cancel
+              </Button>
+              {aiAction === 'rewrite' ? (
+                <Button onClick={() => {
+                  navigator.clipboard.writeText(aiResult);
+                  setShowAIModal(false);
+                }}>
+                  Copy to Clipboard
+                </Button>
+              ) : aiAction === 'characters' ? (
+                <Button onClick={() => setShowAIModal(false)}>
+                  Done
+                </Button>
+              ) : (
+                <Button onClick={applyAIResult}>
+                  {aiAction === 'summarize' ? 'Save Summary' :
+                   aiAction === 'continue' ? 'Append to Scene' :
+                   aiAction === 'beats' ? 'Add Beats' : 'Apply'}
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => setShowAIModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={runAIAction}
+                disabled={aiLoading || !hasApiKey}
+                leftIcon={aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              >
+                {aiLoading ? 'Generating...' : 'Generate'}
+              </Button>
+            </>
+          )
+        }
+      >
+        <div className="space-y-4">
+          {!hasApiKey && (
+            <div className="flex items-center gap-2 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-yellow-500 font-medium">API Key Required</p>
+                <p className="text-xs text-yellow-500/80">
+                  Please configure your OpenRouter API key in Settings to use AI features.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {aiError && (
+            <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-red-500" />
+              <span className="text-sm text-red-500">{aiError}</span>
+            </div>
+          )}
+
+          {!aiResult && (
+            <div className="text-sm text-[var(--text-secondary)]">
+              {aiAction === 'summarize' && (
+                <p>Generate a concise summary of this scene. The summary will be saved to the scene metadata.</p>
+              )}
+              {aiAction === 'continue' && (
+                <p>AI will analyze the context and continue writing your scene naturally, matching your style and tone.</p>
+              )}
+              {aiAction === 'rewrite' && (
+                <>
+                  <p>Rewrite the selected text to improve clarity, flow, and engagement.</p>
+                  {selectedText && (
+                    <div className="mt-3 p-3 bg-[var(--bg-tertiary)] rounded-lg">
+                      <p className="text-xs text-[var(--text-muted)] mb-1">Selected text:</p>
+                      <p className="text-[var(--text-primary)]">"{selectedText.slice(0, 200)}{selectedText.length > 200 ? '...' : ''}"</p>
+                    </div>
+                  )}
+                  {!selectedText && (
+                    <p className="mt-2 text-yellow-500">No text selected. Select some text in the editor first.</p>
+                  )}
+                </>
+              )}
+              {aiAction === 'beats' && (
+                <p>Generate story beats (key events/story points) for this scene based on its content.</p>
+              )}
+              {aiAction === 'characters' && (
+                <p>Detect and list all characters mentioned in this scene.</p>
+              )}
+            </div>
+          )}
+
+          {aiResult && (
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--text-muted)]">AI Response:</p>
+              <div className="p-4 bg-[var(--bg-tertiary)] rounded-lg max-h-80 overflow-y-auto">
+                <p className="text-sm text-[var(--text-primary)] whitespace-pre-wrap">{aiResult}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
