@@ -15,8 +15,6 @@ import {
   Folder,
   MoreHorizontal,
   Trash2,
-  Copy,
-  Edit2,
   Archive,
 } from 'lucide-react';
 import { useStore } from '@/store';
@@ -35,7 +33,6 @@ export function Sidebar() {
     activeView,
     setActiveView,
     sidebarOpen,
-    toggleSidebar,
     selectScene,
     currentSceneId,
     createAct,

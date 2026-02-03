@@ -6,19 +6,15 @@ import {
   Plus,
   Link2,
   Tag,
-  Clock,
   Eye,
   EyeOff,
-  ChevronDown,
-  ChevronRight,
   Users,
-  MapPin,
   Image,
 } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/common/Button';
 import { Badge } from '@/components/common/Badge';
-import { Modal, ConfirmModal } from '@/components/common/Modal';
+import { ConfirmModal } from '@/components/common/Modal';
 import { Input, Textarea, Select } from '@/components/common/Input';
 import { TagInput } from '@/components/common/TagInput';
 import { ColorPicker } from '@/components/common/ColorPicker';

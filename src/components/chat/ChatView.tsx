@@ -8,10 +8,8 @@ import {
   Copy,
   Check,
   Sparkles,
-  ChevronDown,
   FileText,
   BookOpen,
-  Users,
   Loader2,
   Eye,
   RefreshCw,
@@ -23,11 +21,10 @@ import {
 import { useStore } from '@/store';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
-import { Input, Textarea, Select } from '@/components/common/Input';
+import { Input, Select } from '@/components/common/Input';
 import { EmptyState } from '@/components/common/EmptyState';
-import { Badge } from '@/components/common/Badge';
 import { Dropdown, DropdownItem, DropdownDivider } from '@/components/common/Dropdown';
-import { AIService, buildContext, buildFullPrompt, estimateTokens } from '@/services/ai';
+import { AIService, buildContext } from '@/services/ai';
 import type { ChatConversation, ChatMessage, CodexEntryType } from '@/types';
 import { format } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
@@ -82,7 +79,7 @@ export function ChatView() {
     if (!currentNovelId) return;
     // Try to extract a name from the first line
     const lines = content.split('\n');
-    const name = lines[0].replace(/^[#\-\*\s]+/, '').slice(0, 50) || 'New Entry';
+    const name = lines[0].replace(/^[#\-*\s]+/, '').slice(0, 50) || 'New Entry';
     const description = lines.slice(1).join('\n').trim();
 
     await createCodexEntry(currentNovelId, {
@@ -110,7 +107,7 @@ export function ChatView() {
     const beatLines = content.split('\n').filter(line => line.trim());
     const newBeats = beatLines.slice(0, 10).map((line, index) => ({
       id: uuidv4(),
-      content: line.replace(/^[\d\.\-\*]+\s*/, '').trim(),
+      content: line.replace(/^[\d.\-*]+\s*/, '').trim(),
       order: (currentScene.beats?.length || 0) + index,
       isCompleted: false,
     }));
@@ -541,7 +538,7 @@ interface ContextPanelProps {
 }
 
 function ContextPanel({ conversation, onClose, onUpdate }: ContextPanelProps) {
-  const { acts, chapters, scenes, codexEntries, snippets } = useStore();
+  const { scenes } = useStore();
   const [localSettings, setLocalSettings] = useState(conversation.contextSettings);
 
   const handleSave = () => {
