@@ -613,6 +613,59 @@ export const useStore = create<AppState>()(
         .filter(s => s.novelId === novelId && !s.isArchived)
         .reduce((sum, s) => sum + (s.id === id ? (data.wordCount || s.wordCount) : s.wordCount), 0);
       await get().updateNovel(novelId, { wordCount: totalWords });
+
+      // Track codex mentions if content changed
+      if (data.content !== undefined) {
+        const plainText = data.content.replace(/<[^>]*>/g, '').toLowerCase();
+        const codexEntries = get().codexEntries.filter(e => e.novelId === novelId);
+
+        for (const entry of codexEntries) {
+          if (!entry.trackingSettings?.trackAppearances) continue;
+
+          // Check if entry name or any alias appears in the scene
+          const namesToCheck = [entry.name.toLowerCase(), ...(entry.aliases || []).map(a => a.toLowerCase())];
+          let found = false;
+
+          for (const name of namesToCheck) {
+            if (name.length >= 2 && plainText.includes(name)) {
+              found = true;
+              break;
+            }
+          }
+
+          // Update mentions array
+          const mentions = entry.mentions || [];
+          const existingMentionIndex = mentions.findIndex(m => m.sceneId === id);
+
+          if (found && existingMentionIndex === -1) {
+            // Add new mention
+            const wordPosition = plainText.indexOf(namesToCheck[0]);
+            const contextStart = Math.max(0, wordPosition - 50);
+            const contextEnd = Math.min(plainText.length, wordPosition + 50);
+            const context = plainText.slice(contextStart, contextEnd);
+
+            const newMention = { sceneId: id, position: wordPosition, context };
+            const updatedMentions = [...mentions, newMention];
+            await db.codexEntries.update(entry.id, { mentions: updatedMentions });
+            set((state) => {
+              const entryIndex = state.codexEntries.findIndex(e => e.id === entry.id);
+              if (entryIndex !== -1) {
+                state.codexEntries[entryIndex].mentions = updatedMentions;
+              }
+            });
+          } else if (!found && existingMentionIndex !== -1) {
+            // Remove mention
+            const updatedMentions = mentions.filter(m => m.sceneId !== id);
+            await db.codexEntries.update(entry.id, { mentions: updatedMentions });
+            set((state) => {
+              const entryIndex = state.codexEntries.findIndex(e => e.id === entry.id);
+              if (entryIndex !== -1) {
+                state.codexEntries[entryIndex].mentions = updatedMentions;
+              }
+            });
+          }
+        }
+      }
     },
 
     deleteScene: async (id) => {
