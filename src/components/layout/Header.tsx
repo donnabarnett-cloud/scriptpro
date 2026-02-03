@@ -7,11 +7,14 @@ import {
   Upload,
   PlusCircle,
   Search,
-  Bell,
   HelpCircle,
   ChevronDown,
   Maximize2,
   Minimize2,
+  FileText,
+  FileDown,
+  FileUp,
+  Database,
 } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/common/Button';
@@ -19,6 +22,7 @@ import { Dropdown, DropdownItem, DropdownDivider } from '@/components/common/Dro
 import { Modal } from '@/components/common/Modal';
 import { Input, Textarea, Select } from '@/components/common/Input';
 import { exportAllData, importAllData } from '@/db';
+import { ImportExportModal } from '@/components/modals/ImportExportModal';
 
 export function Header() {
   const {
@@ -36,6 +40,8 @@ export function Header() {
 
   const [showNewNovelModal, setShowNewNovelModal] = useState(false);
   const [showNovelSwitcher, setShowNovelSwitcher] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [newNovelData, setNewNovelData] = useState({
     title: '',
     description: '',
@@ -174,11 +180,18 @@ export function Header() {
             }
             align="right"
           >
-            <DropdownItem icon={<Download className="w-4 h-4" />} onClick={handleExport}>
-              Export Backup
+            <DropdownItem icon={<FileUp className="w-4 h-4" />} onClick={() => setShowImportModal(true)}>
+              Import Document
+            </DropdownItem>
+            <DropdownItem icon={<FileDown className="w-4 h-4" />} onClick={() => setShowExportModal(true)}>
+              Export Novel
+            </DropdownItem>
+            <DropdownDivider />
+            <DropdownItem icon={<Database className="w-4 h-4" />} onClick={handleExport}>
+              Backup All Data
             </DropdownItem>
             <DropdownItem icon={<Upload className="w-4 h-4" />} onClick={handleImport}>
-              Import Backup
+              Restore Backup
             </DropdownItem>
             <DropdownDivider />
             <DropdownItem icon={<HelpCircle className="w-4 h-4" />}>
@@ -231,6 +244,18 @@ export function Header() {
           />
         </div>
       </Modal>
+
+      {/* Import/Export Modals */}
+      <ImportExportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        mode="import"
+      />
+      <ImportExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        mode="export"
+      />
     </>
   );
 }

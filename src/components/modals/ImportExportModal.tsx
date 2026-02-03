@@ -44,7 +44,9 @@ export function ImportExportModal({ isOpen, onClose, mode }: ImportExportModalPr
 }
 
 function ImportContent({ onClose }: { onClose: () => void }) {
-  const { currentNovel, createAct, createChapter, createScene, loadNovelData } = useStore();
+  const { novels, currentNovelId, createAct, createChapter, createScene, loadNovelData } = useStore();
+  const currentNovel = novels.find(n => n.id === currentNovelId);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'importing' | 'success' | 'error'>('idle');
@@ -95,8 +97,7 @@ function ImportContent({ onClose }: { onClose: () => void }) {
 
       // Create the imported structure
       for (const actData of result.acts) {
-        const act = await createAct({
-          novelId: currentNovel.id,
+        const act = await createAct(currentNovel.id, {
           title: actData.title,
           description: actData.description,
           order: actData.order,
@@ -105,9 +106,7 @@ function ImportContent({ onClose }: { onClose: () => void }) {
 
         const actChapters = result.chapters.filter(c => c.actId === actData.novelId);
         for (const chapterData of actChapters) {
-          const chapter = await createChapter({
-            novelId: currentNovel.id,
-            actId: act.id,
+          const chapter = await createChapter(currentNovel.id, act.id, {
             title: chapterData.title,
             description: chapterData.description,
             order: chapterData.order,
@@ -115,9 +114,7 @@ function ImportContent({ onClose }: { onClose: () => void }) {
 
           const chapterScenes = result.scenes.filter(s => s.chapterId === chapterData.novelId);
           for (const sceneData of chapterScenes) {
-            await createScene({
-              novelId: currentNovel.id,
-              chapterId: chapter.id,
+            await createScene(currentNovel.id, chapter.id, {
               title: sceneData.title,
               content: sceneData.content,
               order: sceneData.order,
@@ -138,25 +135,20 @@ function ImportContent({ onClose }: { onClose: () => void }) {
       // If no acts were created (simple import), create structure directly
       if (result.acts.length === 0) {
         // Create default act
-        const act = await createAct({
-          novelId: currentNovel.id,
+        const act = await createAct(currentNovel.id, {
           title: 'Imported Content',
           order: 0,
         });
 
         for (const chapterData of result.chapters) {
-          const chapter = await createChapter({
-            novelId: currentNovel.id,
-            actId: act.id,
+          const chapter = await createChapter(currentNovel.id, act.id, {
             title: chapterData.title,
             order: chapterData.order,
           });
 
           const chapterScenes = result.scenes.filter(s => s.chapterId === chapterData.actId);
           for (const sceneData of chapterScenes) {
-            await createScene({
-              novelId: currentNovel.id,
-              chapterId: chapter.id,
+            await createScene(currentNovel.id, chapter.id, {
               title: sceneData.title,
               content: sceneData.content,
               order: sceneData.order,
@@ -299,7 +291,9 @@ function ImportContent({ onClose }: { onClose: () => void }) {
 }
 
 function ExportContent({ onClose }: { onClose: () => void }) {
-  const { currentNovel, acts, chapters, scenes, codexEntries } = useStore();
+  const { novels, currentNovelId, acts, chapters, scenes, codexEntries } = useStore();
+  const currentNovel = novels.find(n => n.id === currentNovelId);
+
   const [status, setStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
